@@ -6,7 +6,6 @@ import time
 import threading
 import sha
 import sys
-import hotshot, hotshot.stats
 
 class URL_Repository:
   """A repository which keeps track of which URLS have already been fetched and
@@ -80,16 +79,6 @@ class Website_Repository:
       self.site_hashes_with_urls[hash] = set([url])
     self.condition.release()
 
-    #Uncomment to save html to disk
-    #parsedURL = urllib2.urlparse.urlsplit(url)
-    #savePath = "download/" + parsedURL[1]
-    #if not os.path.exists(savePath):
-      #os.mkdir(savePath)
-    #outFile = open(savePath + "/" + base64.b32encode(url),"w")
-    #outFile.write(html)
-
-
-
 class Worker(threading.Thread):
   """A worker thread which gets URLs from the URL repository, stores it in the
   website repository and adds URLs contained in it to the URL repository."""
@@ -100,30 +89,19 @@ class Worker(threading.Thread):
     self.website_repository = website_repository
 
   def run(self):
-    if "Thread-1" == self.getName():
-      prof = hotshot.Profile("stones.prof")
-      prof.runcall(self.real_run)
-      #prof.run("self.real_run()")
-      prof.close()
-      stats = hotshot.stats.load("stones.prof")
-      stats.strip_dirs()
-      stats.sort_stats('time', 'calls')
-      stats.print_stats(20)
-    else:
-      self.real_run()
-
-  def real_run(self):
     while True:
 
       try:
         url = self.url_repository.reserve_url()
-      except IndexError:
+      except IndexError: #repository exhausted
         return
  
       try:
         if len(self.url_repository.urls_already_crawled) % 10 == 0:
           print "Number of URLs crawled so far: ", len(self.url_repository.urls_already_crawled)
 
+        #There seems to be some problem with urllib2 which makes reading
+        #websites quite slow.
         response = urllib2.urlopen(url)
         html = response.read()
 
@@ -149,15 +127,16 @@ class Worker(threading.Thread):
         # http://bla.net/bla/../bla). Enable raising the exception to see them.
         #raise 
 
-max_sites = 300
+max_sites = 1000
 num_threads = 20
+start_url = "http://www.heise.de"
 
-#os.system("rm -Rf download/*")
 starttime = time.time()
 
 website_repository = Website_Repository()
-url_repository = URL_Repository("http://www.spiegel.de", max_sites)
+url_repository = URL_Repository(start_url, max_sites)
 workers = [Worker(url_repository, website_repository) for i in range(1, num_threads + 1)]
+
 for worker in workers:
   worker.start()
 
@@ -180,6 +159,3 @@ for key in website_repository.site_hashes_with_urls:
   if len(urls) > 1:
     print "Duplicate websites: ", urls
 raw_input()
-
-print "Press Enter to leave."
-
