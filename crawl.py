@@ -236,8 +236,13 @@ def run_crawler(sorted_storage):
   for worker in workers:
     worker.start()
 
-  for worker in workers:
-    worker.join()
+  while True:
+    for worker in workers:
+      worker.join(1)
+      if url_repository.num_removed_urls >= max_sites:
+	break
+    if url_repository.num_removed_urls >= max_sites:
+      break
 
   print "Time in seconds: ",  time.time() - starttime
   print "Crawled Websites: ", url_repository.num_removed_urls
