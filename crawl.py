@@ -113,7 +113,7 @@ class Server_Based_Storage:
     self.unprocessed_servers = {}
 
   def add(self, url):
-    server = urllib2.urlparse.urlparse(url).hostname
+    server = urllib2.urlparse.urlparse(url)[1] #.hostname is not supported on all platforms
     try:
       urls = self.processed_servers[server]
     except KeyError:
