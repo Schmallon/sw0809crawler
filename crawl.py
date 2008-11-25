@@ -8,7 +8,6 @@ import sha
 import sys
 import socket
 
-"Prevent a single slow server from destroying the statistics"
 socket.setdefaulttimeout(10)
 
 class URL_Repository:
@@ -188,7 +187,7 @@ class Worker(threading.Thread):
         return
  
       try:
-        if self.url_repository.num_removed_urls % 10 == 0:
+        if self.url_repository.num_removed_urls % 500 == 0:
           print "Number of URLs crawled so far: ", self.url_repository.num_removed_urls
 
         #There seems to be some problem with urllib2 which makes reading
@@ -213,17 +212,17 @@ class Worker(threading.Thread):
       except IOError:
         pass
       except:
-        print "Problem with URL: ", url
-        #pass
+        #print "Problem with URL: ", url
+        pass
         # There are still a few unhandled cases (e.g.
         # http://bla.net/bla/../bla). Enable raising the exception to see them.
-        raise 
+        #raise 
 
 def run_crawler(sorted_storage):
 
   print "Starting crawling using sorted storage of type: " , sorted_storage.__class__
 
-  max_sites = 100
+  max_sites = 10000
   num_threads = 40
   start_url = "http://www.heise.de"
 
@@ -253,14 +252,9 @@ def run_crawler(sorted_storage):
 
   print "Previously known Websites: ", website_repository.num_duplicate_websites
 
-  #print "Press Enter for list of duplicate sites"
-  #raw_input()
-  #for key in website_repository.site_hashes_with_urls:
-  #  urls = website_repository.site_hashes_with_urls[key]
-  #  if len(urls) > 1:
-  #    print "Duplicate websites: ", urls
-  #raw_input()
+  print "Ignoring dangling threads"
 
-run_crawler(Queue_Storage())
-run_crawler(Stack_Storage())
-run_crawler(Server_Based_Storage())
+#run_crawler(Stack_Storage())
+#run_crawler(Queue_Storage())
+#run_crawler(Server_Based_Storage())
+#run_crawler(Random_Storage())
