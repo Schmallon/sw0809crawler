@@ -75,6 +75,19 @@ class Stack_Storage:
   def exception_class(self):
     return IndexError
 
+class Random_Storage:
+
+  def __init__(self):
+    self.storage = []
+  def add(self, url):
+    self.storage.append(url)
+  def remove(self):
+    if len(self.storage) == 0:
+      raise IndexError()
+    return self.storage.pop(random.randint(0, len(self.storage) - 1))
+  def exception_class(self):
+    return IndexError
+
 class Queue_Storage:
   """
   A queue based storage can be used to implement BFS.
