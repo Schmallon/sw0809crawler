@@ -1,3 +1,4 @@
+from __future__ import with_statement
 import re
 import urllib2
 import os.path
@@ -27,25 +28,22 @@ class URL_Repository:
     self.sorted_storage.add(startURL, "")
 
   def add_url(self, url, containing_html):
-    self.condition.acquire()
-    if (url not in self.known_urls):
-      self.known_urls.add(url)
-      self.sorted_storage.add(url, containing_html)
-      self.condition.notify()
-    else:
-      self.num_duplicate_urls = self.num_duplicate_urls + 1
-    self.condition.release()
+    with self.condition:
+      if (url not in self.known_urls):
+        self.known_urls.add(url)
+        self.sorted_storage.add(url, containing_html)
+      else:
+        self.num_duplicate_urls = self.num_duplicate_urls + 1
 
   def reserve_url(self):
     "Returns a non-fetched URL and marks it as fetched."
 
-    self.condition.acquire()
-    try:
-      url = self.sorted_storage.remove()
-    except self.sorted_storage.exception_class():
-      self.condition.wait()
-      url = self.sorted_storage.remove()
-    self.condition.release()
+    with self.condition:
+      try:
+        url = self.sorted_storage.remove()
+      except self.sorted_storage.exception_class():
+        self.condition.wait()
+        return reserve_url()
     return url
 
   def num_unique_urls(self):
@@ -202,17 +200,16 @@ class Website_Repository:
       return
 
     hash = sha.new(html).digest()
-    self.condition.acquire()
-    try:
-      url_set = self.site_hashes_with_urls[hash]
-      if url in url_set:
-        print "URL already contained in repository"
-      url_set.add(url)
-      self.num_duplicate_websites = self.num_duplicate_websites + 1
-    except KeyError:
-      self.site_hashes_with_urls[hash] = set([url])
-      self.watchdog.add_website(url, html)
-    self.condition.release()
+    with self.condition:
+      try:
+        url_set = self.site_hashes_with_urls[hash]
+        if url in url_set:
+          print "URL already contained in repository"
+        url_set.add(url)
+        self.num_duplicate_websites = self.num_duplicate_websites + 1
+      except KeyError:
+        self.site_hashes_with_urls[hash] = set([url])
+        self.watchdog.add_website(url, html)
 
   def must_cancel(self):
     return self.watchdog.must_cancel()
@@ -302,6 +299,8 @@ class Watchdog:
   def must_cancel(self):
     return self.num_matched_websites > self.matched_sites_limit
   def add_website(self, url, html):
+    if self.num_fetched_websites % 50 == 0:
+      print "Fetched websites: ", self.num_fetched_websites
     self.num_fetched_websites = self.num_fetched_websites + 1
     if self.matcher.matches(url, html):
       self.num_matched_websites = self.num_matched_websites + 1
