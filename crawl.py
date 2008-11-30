@@ -19,11 +19,10 @@ class URL_Repository:
   repository implementation is (supposed to be) thread safe.
   """
 
-  def __init__(self, startURL, sorted_storage, watchdog):
+  def __init__(self, startURL, sorted_storage):
     self.known_urls = set([startURL])
     self.condition = threading.Condition()
     self.num_duplicate_urls = 0
-    self.watchdog = watchdog
     self.sorted_storage = sorted_storage
     self.sorted_storage.add(startURL, "")
 
@@ -39,8 +38,6 @@ class URL_Repository:
 
   def reserve_url(self):
     "Returns a non-fetched URL and marks it as fetched."
-    if self.watchdog.must_cancel():
-      raise IndexError()
 
     self.condition.acquire()
     try:
@@ -49,7 +46,6 @@ class URL_Repository:
       self.condition.wait()
       url = self.sorted_storage.remove()
     self.condition.release()
-    self.watchdog.url_removed(url)
     return url
 
   def num_unique_urls(self):
@@ -192,14 +188,18 @@ class Website_Repository:
   """A repository which allows accessing all URLs of a website by the website's
   contents."""
 
-  def __init__(self):
+  def __init__(self, watchdog):
     #Store the sha1 of any website seen together with the URLs that led to it
     self.site_hashes_with_urls = {}
     self.condition = threading.Condition()
     #self.sites_with_urls_mutex = threading.mutex() #Access to the sites already seen dictionary should be synchronized
     self.num_duplicate_websites = 0
+    self.watchdog = watchdog
 
   def add_website(self, url, html):
+
+    if self.must_cancel():
+      return
 
     hash = sha.new(html).digest()
     self.condition.acquire()
@@ -211,7 +211,11 @@ class Website_Repository:
       self.num_duplicate_websites = self.num_duplicate_websites + 1
     except KeyError:
       self.site_hashes_with_urls[hash] = set([url])
+      self.watchdog.add_website(url, html)
     self.condition.release()
+
+  def must_cancel(self):
+    return self.watchdog.must_cancel()
 
 class Word_Based_Weight:
   def __init__(self, key_words):
@@ -231,11 +235,13 @@ class Word_Based_Weight:
     return weight
 
 class Filetype_Matcher:
-  def __init__(self, extension):
-    self.extension = extension
+  def __init__(self, extensions):
+    self.extensions = extensions
 
-  def matches(self, url):
-    return len(re.findall("\\." + self.extension + "$", url, re.I)) != 0
+  def matches(self, url, html):
+    return any( map(
+      lambda extension: re.findall("\\." + extension + "(\?.*)*(#.*)*$", url, re.I),
+      self.extensions ))
 
 class Worker(threading.Thread):
   """A worker thread which gets URLs from the URL repository, stores it in the
@@ -249,10 +255,10 @@ class Worker(threading.Thread):
   def run(self):
     while True:
 
-      try:
-        url = self.url_repository.reserve_url()
-      except IndexError: #repository exhausted
+      if self.website_repository.must_cancel():
         return
+
+      url = self.url_repository.reserve_url()
  
       try:
         #There seems to be some problem with urllib2 which makes reading
@@ -286,36 +292,36 @@ class Worker(threading.Thread):
 class Watchdog:
   """
   Need a better name: Something like "A cancel condition based on the count of
-  matched URLs".
+  matched Websites".
   """
   def __init__(self, matcher, matched_sites_limit):
-    self.num_removed_urls = 0
-    self.num_matched_urls = 0
+    self.num_fetched_websites = 0
+    self.num_matched_websites = 0
     self.matcher = matcher
     self.matched_sites_limit = matched_sites_limit
   def must_cancel(self):
-    return self.num_matched_urls > self.matched_sites_limit
-  def url_removed(self, url):
-    self.num_removed_urls = self.num_removed_urls + 1
-    if self.matcher.matches(url):
-      self.num_matched_urls = self.num_matched_urls + 1
-      print "Matched URL: ", url
-      print "Matched URLs: ", self.num_matched_urls, ", Fetched URLs: ", self.num_removed_urls
+    return self.num_matched_websites > self.matched_sites_limit
+  def add_website(self, url, html):
+    self.num_fetched_websites = self.num_fetched_websites + 1
+    if self.matcher.matches(url, html):
+      self.num_matched_websites = self.num_matched_websites + 1
+      print "Matched Websites: ", url
+      print "Matched Websites: ", self.num_matched_websites, ", Fetched Websites: ", self.num_fetched_websites
 
 def run_crawler(sorted_storage, watchdog):
 
   print "Starting crawling using sorted storage of type: " , sorted_storage.__class__
 
   num_threads = 40
-  #start_url = "http://www.heise.de"
+  start_url = "http://www.heise.de"
   #start_url = "http://www.google.com/search?q=semantic+web"
   #start_url = "http://www.semanticweb.org"
   #start_url = "http://amigo.geneontology.org/cgi-bin/amigo/browse.cgi?action=plus_node&target=GO:0008150&open_1=all&session_id=226amigo1228047842"
-  start_url = "http://amigo.geneontology.org"
+  #start_url = "http://amigo.geneontology.org"
   starttime = time.time()
 
-  website_repository = Website_Repository()
-  url_repository = URL_Repository(start_url, sorted_storage, watchdog)
+  website_repository = Website_Repository(watchdog)
+  url_repository = URL_Repository(start_url, sorted_storage)
   workers = [Worker(url_repository, website_repository) for i in range(1, num_threads + 1)]
 
   for worker in workers:
@@ -330,7 +336,7 @@ def run_crawler(sorted_storage, watchdog):
       break
 
   print "Time in seconds: ",  time.time() - starttime
-  print "Crawled Websites: ", watchdog.num_removed_urls
+  print "Crawled Websites: ", watchdog.num_fetched_websites
 
   print "URLs recognized: ", url_repository.num_urls()
   print "Unique URLs: ", url_repository.num_unique_urls()
@@ -340,9 +346,10 @@ def run_crawler(sorted_storage, watchdog):
 
   print "Ignoring dangling threads"
 
-watchdog = Watchdog(Filetype_Matcher("rdf"), 10)
+matcher = Filetype_Matcher(["xml", "rdf", "xhtml"])
+watchdog = Watchdog(matcher, 10)
+run_crawler(Weighted_Storage(Word_Based_Weight(["xml", "rdf", "semantic web"])), watchdog)
 #run_crawler(Stack_Storage())
 #run_crawler(Queue_Storage())
 #run_crawler(Server_Based_Storage())
 #run_crawler(Random_Storage())
-run_crawler(Weighted_Storage(Word_Based_Weight(["rdf"])), watchdog)
