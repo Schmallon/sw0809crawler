@@ -26,11 +26,11 @@ class URL_Repository:
     sorted_storage.add(startURL)
     self.sorted_storage = sorted_storage
 
-  def add_url(self, url):
+  def add_url(self, url, containing_html):
     self.condition.acquire()
     if (url not in self.known_urls):
       self.known_urls.add(url)
-      self.sorted_storage.add(url)
+      self.sorted_storage.add(url, containing_html)
       self.condition.notify()
     else:
       self.num_duplicate_urls = self.num_duplicate_urls + 1
@@ -60,6 +60,33 @@ class URL_Repository:
   def num_uris_previously_known(self):
     return self.num_duplicate_urls
 
+
+class Weighted_Storage:
+  """
+  Sort URLs based on weight.
+
+  Better: Find a proper btree implementation.
+  """
+  def __init__(self, get_weight):
+    self.num_buckets = 10
+    self.get_weight = get_weight
+    self.storage = []
+    for i in range(1, self.num_buckets + 1):
+      self.storage.append([])
+  def add(self, url, containing_html):
+    weight = self.get_weight(url)
+    assert weight >= 0 and weight < 1
+    urls = self.storage[int(weight * self.num_buckets)]
+    urls.append(url)
+  def remove(self):
+    for i in range(1, self.num_buckets + 1):
+      urls = self.storage[i]
+      if len(urls) > 0:
+        break
+    return urls.pop()
+  def exception_class(self):
+    return IndexError
+
 class Stack_Storage:
   """
   A stack based storage can be used to implement DFS.
@@ -67,7 +94,7 @@ class Stack_Storage:
 
   def __init__(self):
     self.storage = []
-  def add(self, url):
+  def add(self, url, containing_html):
     self.storage.append(url)
   def remove(self):
     return self.storage.pop()
@@ -78,7 +105,7 @@ class Random_Storage:
 
   def __init__(self):
     self.storage = []
-  def add(self, url):
+  def add(self, url, containing_html):
     self.storage.append(url)
   def remove(self):
     if len(self.storage) == 0:
@@ -93,7 +120,7 @@ class Queue_Storage:
   """
   def __init__(self):
     self.storage = []
-  def add(self, url):
+  def add(self, url, containing_html):
     self.storage.append(url)
   def remove(self):
     return self.storage.pop(0)
@@ -207,7 +234,7 @@ class Worker(threading.Thread):
               foundURL = urllib2.urlparse.urljoin(url, foundURL)
             foundURL = foundURL.rstrip('/') # Remove trailing slashes
             if (foundURL[0:4] == "http"):
-              self.url_repository.add_url(foundURL)
+              self.url_repository.add_url(foundURL, html)
 
       except IOError:
         pass
