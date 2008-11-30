@@ -214,21 +214,28 @@ class Website_Repository:
   def must_cancel(self):
     return self.watchdog.must_cancel()
 
-class Word_Based_Weight:
+def harmonic_mean(l):
+  return len(l) / sum(map(lambda x: 1 / x, l))
+
+class Harmonic_Word_Weighter:
   def __init__(self, key_words):
     self.key_words = key_words
 
   def get_weight(self, url, html):
-    num_matches_in_html = 0
-    num_matches_in_url = 0
+    capped_html_matches = []
+    capped_url_matches = []
+
     for key_word in self.key_words:
-      num_matches_in_html = num_matches_in_html + len(re.findall(key_word, html, re.I))
-      num_matches_in_url = num_matches_in_url + len(re.findall(key_word, url, re.I))
-    uncapped_weight = (num_matches_in_url / 3.0) + (num_matches_in_html * 1000.0 / (1 + len(html)))
-    weight = min(0.9999999, uncapped_weight)
-    #print "Matches in HTML: ", num_matches_in_html
-    #print "Matches in URL: ", num_matches_in_url
-    #print "Weight: ", weight
+      html_matches = len(re.findall(key_word, html, re.I))
+      url_matches= len(re.findall(key_word, url, re.I))
+      html_relative = html_matches * 1000.0 / (1 + len(html))
+      url_relative = url_matches / 3.0
+      capped_html_matches.append(max(0.01, min(0.999, html_relative)))
+      capped_url_matches.append(max(0.01, min(0.999, url_relative)))
+
+    weight = (harmonic_mean(capped_html_matches) + 
+	      harmonic_mean(capped_url_matches)) / 2.0
+
     return weight
 
 class Filetype_Matcher:
@@ -239,6 +246,19 @@ class Filetype_Matcher:
     return any( map(
       lambda extension: re.findall("\\." + extension + "(\?.*)*(#.*)*$", url, re.I),
       self.extensions ))
+
+class All_Matcher:
+  def matches(self, url, html):
+    return True
+
+class Quality_Matcher:
+  def __init__(self, weighter, quality_threshold):
+    self.weighter = weighter
+    self.quality_threshold = quality_threshold
+
+  def matches(self, url, html):
+    return self.weighter.get_weight(url, html) > self.quality_threshold
+
 
 class Worker(threading.Thread):
   """A worker thread which gets URLs from the URL repository, stores it in the
@@ -345,9 +365,12 @@ def run_crawler(sorted_storage, watchdog):
 
   print "Ignoring dangling threads"
 
-matcher = Filetype_Matcher(["xml", "rdf", "xhtml"])
-watchdog = Watchdog(matcher, 10)
-run_crawler(Weighted_Storage(Word_Based_Weight(["xml", "rdf", "semantic web"])), watchdog)
+weighter =  Harmonic_Word_Weighter(["semantic", "web"])
+#matcher = Filetype_Matcher(["xml", "rdf", "xhtml"])
+#matcher = All_Matcher()
+matcher = Quality_Matcher(weighter, 0.7)
+watchdog = Watchdog(matcher, 1000)
+run_crawler(Weighted_Storage(weighter), watchdog)
 #run_crawler(Stack_Storage())
 #run_crawler(Queue_Storage())
 #run_crawler(Server_Based_Storage())
