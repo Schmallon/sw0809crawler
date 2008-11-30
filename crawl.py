@@ -69,7 +69,7 @@ class Weighted_Storage:
   Better: Find a proper btree implementation.
   """
   def __init__(self, weighter):
-    self.num_buckets = 10
+    self.num_buckets = 200
     self.weighter = weighter
     self.storage = []
     for i in range(0, self.num_buckets):
@@ -341,15 +341,18 @@ class Worker(threading.Thread):
       try:
         #There seems to be some problem with urllib2 which makes reading
         #websites quite slow.
-        response = urllib2.urlopen(url)
+        request = urllib2.Request(url, headers={'User-Agent':'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.6) Gecko/20040113'}) 
+        response = urllib2.urlopen(request)
+        #response = urllib2.urlopen(url)
         html = response.read()
 
         self.website_repository.add_website(url, html)
 
         #m = re.findall("href=[\'\"](\S+)[\'\"]",html)
-        m = re.findall("href=[\"]([^\s\"]+)[\"]",html)
+        m = re.findall("(href|about|resource)=[\"]([^\s\"#]+)(#[^\"]*)?[\"]",html)
         if m:
           for foundURL in m:
+            foundURL = foundURL[1]
             foundURL = re.sub("\#.*","", foundURL)
             foundURL = re.sub("javascript(.*)","", foundURL)
             if foundURL[0:4].lower() != "http":
