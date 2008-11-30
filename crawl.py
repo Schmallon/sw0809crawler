@@ -391,18 +391,9 @@ class Watchdog:
       print "Matched Websites: ", url
       print "Matched Websites: ", self.num_matched_websites, ", Fetched Websites: ", self.num_fetched_websites
 
-def run_crawler(sorted_storage, watchdog):
-
-  print "Starting crawling using sorted storage of type: " , sorted_storage.__class__
+def run_crawler(start_url, sorted_storage, watchdog):
 
   num_threads = 40
-  #start_url = "http://www.heise.de"
-  #start_url = "http://www.google.com/search?q=semantic+web"
-  #start_url = "http://www.semanticweb.org"
-  #start_url = "http://amigo.geneontology.org/cgi-bin/amigo/browse.cgi?action=plus_node&target=GO:0008150&open_1=all&session_id=226amigo1228047842"
-  #start_url = "http://amigo.geneontology.org"
-  #start_url = "http://swoogle.umbc.edu/index.php?option=com_frontpage&service=search&queryType=search_swd_ontology&searchString=test&searchStart=1"
-  start_url = "http://planetrdf.com/guide/"
   starttime = time.time()
 
   website_repository = Website_Repository(watchdog)
@@ -435,16 +426,19 @@ def run_crawler(sorted_storage, watchdog):
 #weighter =  Harmonic_Word_Weighter(["semantic", "web"])
 #matcher = Quality_Matcher(weighter, 0.7)
 #storage = Weighted_Storage(weighter)
+#start_url = "http://www.semanticweb.org"
                      ############# XML Documents ##########
 #matcher = XML_Matcher()
-#weighter = Harmonic_Word_Weighter(["xml"])
-#storage = Weighted_Storage(weighter)
-##storage = Queue_Storage()
+##weighter = Harmonic_Word_Weighter(["xml"])
+##storage = Weighted_Storage(weighter)
+#storage = Queue_Storage()
+#start_url = "http://en.wikipedia.org/wiki/XHTML"
                      ############# RDF Documents ##########
 matcher = RDF_Matcher()
-weighter = Harmonic_Word_Weighter(["rdf"])
+weighter = Normal_Word_Weighter(["rdf", "resource", "ontology", "semantic web", "owl"])
 storage = Weighted_Storage(weighter)
+start_url = "http://planetrdf.com/guide/"
 
-watchdog = Watchdog(matcher, 1000)
-run_crawler(storage, watchdog)
+watchdog = Watchdog(matcher, 5)
 
+run_crawler(start_url, storage, watchdog)
