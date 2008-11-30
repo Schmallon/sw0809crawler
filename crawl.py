@@ -224,29 +224,57 @@ class Website_Repository:
 def harmonic_mean(l):
   return len(l) / sum(map(lambda x: 1 / x, l))
 
+def mean(l):
+  return sum(l) / len(l)
+
 
 class One_Weighter:
   def get_weight(self, url, html):
     return 1.0
 
-class Harmonic_Word_Weighter:
-  def __init__(self, key_words):
-    self.key_words = key_words
 
-  def get_weight(self, url, html):
+class Base_Word_Weighter:
+  def __init__(self, key_words):
+    self.patterns = []
+    for key_word in key_words:
+      self.patterns.append(re.compile(key_word, re.I))
+
+  def get_weights(self, url, html):
     capped_html_matches = []
     capped_url_matches = []
 
-    for key_word in self.key_words:
-      html_matches = len(re.findall(key_word, html, re.I))
-      url_matches= len(re.findall(key_word, url, re.I))
+    for pattern in self.patterns:
+      html_matches = len(pattern.findall(html[:2048]))
+      url_matches= len(pattern.findall(url))
       html_relative = html_matches * 1000.0 / (1 + len(html))
       url_relative = url_matches / 3.0
       capped_html_matches.append(max(0.01, min(0.999, html_relative)))
       capped_url_matches.append(max(0.01, min(0.999, url_relative)))
 
+    return capped_url_matches, capped_html_matches
+
+class Harmonic_Word_Weighter:
+  def __init__(self, key_words):
+    self.base_word_weighter = Base_Word_Weighter(key_words)
+
+  def get_weight(self, url, html):
+
+    capped_url_matches, capped_html_matches = self.base_word_weighter.get_weights(url, html)
+
     weight = (harmonic_mean(capped_html_matches) + 
 	      harmonic_mean(capped_url_matches)) / 2.0
+
+    return weight
+
+class Normal_Word_Weighter:
+  def __init__(self, key_words):
+    self.base_word_weighter = Base_Word_Weighter(key_words)
+
+  def get_weight(self, url, html):
+
+    capped_url_matches, capped_html_matches = self.base_word_weighter.get_weights(url, html)
+
+    weight = (mean(capped_html_matches) + mean(capped_url_matches)) / 2.0
 
     return weight
 
