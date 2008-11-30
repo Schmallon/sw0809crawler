@@ -7,6 +7,8 @@ import threading
 import sha
 import sys
 import socket
+import unittest
+import random
 
 socket.setdefaulttimeout(10)
 
@@ -138,8 +140,8 @@ class Server_Based_Storage:
     self.processed_servers = {}
     self.unprocessed_servers = {}
 
-  def add(self, url):
-    server = urllib2.urlparse.urlparse(url)[1] #.hostname is not supported on all platforms
+  def add(self, url, containing_html):
+    server = urllib2.urlparse.urlparse(url)[1]
     try:
       urls = self.processed_servers[server]
     except KeyError:
@@ -169,7 +171,23 @@ class Server_Based_Storage:
   def exception_class(self):
     return IndexError
 
+class Test_Storage(unittest.TestCase):
 
+  def test_all_storages(self):
+    self.run_test(Server_Based_Storage())
+    self.run_test(Queue_Storage())
+    self.run_test(Stack_Storage())
+    self.run_test(Random_Storage())
+    self.run_test(Weighted_Storage(lambda x: 0.5))
+
+  def run_test(self, storage):
+    storage.add("http://bla.1.bla", "<html></html>")
+    storage.add("http://bla.2.bla", "<html></html>")
+    storage.add("http://bla.3.bla", "<html></html>")
+    storage.remove()
+    storage.remove()
+    storage.remove()
+    self.assertRaises(storage.exception_class(), storage.remove)
 
 class Website_Repository:
   """A repository which allows accessing all URLs of a website by the website's
