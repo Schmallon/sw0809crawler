@@ -25,7 +25,7 @@ class URL_Repository:
     self.condition = threading.Condition()
     self.num_duplicate_urls = 0
     self.pop_limit = pop_limit
-    sorted_storage.add(startURL)
+    sorted_storage.add(startURL, "")
     self.sorted_storage = sorted_storage
 
   def add_url(self, url, containing_html):
@@ -69,19 +69,19 @@ class Weighted_Storage:
 
   Better: Find a proper btree implementation.
   """
-  def __init__(self, get_weight):
+  def __init__(self, weighter):
     self.num_buckets = 10
-    self.get_weight = get_weight
+    self.weighter = weighter
     self.storage = []
-    for i in range(1, self.num_buckets + 1):
+    for i in range(0, self.num_buckets):
       self.storage.append([])
   def add(self, url, containing_html):
-    weight = self.get_weight(url)
+    weight = self.weighter.get_weight(url, containing_html)
     assert weight >= 0 and weight < 1
     urls = self.storage[int(weight * self.num_buckets)]
     urls.append(url)
   def remove(self):
-    for i in range(1, self.num_buckets + 1):
+    for i in range(self.num_buckets - 1, -1, -1):
       urls = self.storage[i]
       if len(urls) > 0:
         break
@@ -214,6 +214,32 @@ class Website_Repository:
       self.site_hashes_with_urls[hash] = set([url])
     self.condition.release()
 
+class Word_Based_Weight:
+  def __init__(self, key_words):
+    self.key_words = key_words
+
+  def get_weight(self, url, html):
+    num_matches_in_html = 0
+    num_matches_in_url = 0
+    for key_word in self.key_words:
+      num_matches_in_html = num_matches_in_html + len(re.findall(key_word, html, re.I))
+      num_matches_in_url = num_matches_in_url + len(re.findall(key_word, url, re.I))
+    print "Matches in HTML: ", num_matches_in_html
+    print "Matches in URL: ", num_matches_in_url
+    uncapped_weight = (num_matches_in_url / 3.0) + (num_matches_in_html * 1000.0 / (1 + len(html)))
+    weight = min(0.9999999, uncapped_weight)
+    print "Weight: ", weight
+    return weight
+
+class Filetype_Based_Weight:
+  def __init__(self, extension):
+    self.extension = extension
+
+  def get_weight(self, url, html):
+    if len(re.findall(self.extension + "$", url, re.I)) != 0:
+      return 1.0
+    return 0.0
+
 class Worker(threading.Thread):
   """A worker thread which gets URLs from the URL repository, stores it in the
   website repository and adds URLs contained in it to the URL repository."""
@@ -303,3 +329,4 @@ def run_crawler(sorted_storage):
 #run_crawler(Queue_Storage())
 #run_crawler(Server_Based_Storage())
 #run_crawler(Random_Storage())
+#run_crawler(Weighted_Storage(Word_Based_Weight(["semantic", "web"])))
