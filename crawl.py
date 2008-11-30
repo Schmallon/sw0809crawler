@@ -9,6 +9,7 @@ import sys
 import socket
 import unittest
 import random
+import xml.dom.minidom
 
 socket.setdefaulttimeout(10)
 
@@ -220,6 +221,11 @@ class Website_Repository:
 def harmonic_mean(l):
   return len(l) / sum(map(lambda x: 1 / x, l))
 
+
+class One_Weighter:
+  def get_weight(self, url, html):
+    return 1.0
+
 class Harmonic_Word_Weighter:
   def __init__(self, key_words):
     self.key_words = key_words
@@ -249,6 +255,27 @@ class Filetype_Matcher:
     return any( map(
       lambda extension: re.findall("\\." + extension + "(\?.*)*(#.*)*$", url, re.I),
       self.extensions ))
+
+class XML_Matcher:
+  def matches(self, url, html):
+    try:
+      dom = xml.dom.minidom.parseString(html)
+      dom.unlink()
+      return True
+    except Exception:
+      return False
+
+class RDF_Matcher:
+  def matches(self, url, html):
+    is_rdf = False
+    try:
+      dom = xml.dom.minidom.parseString(html)
+      root_tag = str(dom.documentElement.tagName)
+      is_rdf = len(re.findall(".*:rdf", root_tag, re.I)) != 0 
+      dom.unlink()
+    except Exception:
+      return False
+    return is_rdf
 
 class All_Matcher:
   def matches(self, url, html):
@@ -335,11 +362,13 @@ def run_crawler(sorted_storage, watchdog):
   print "Starting crawling using sorted storage of type: " , sorted_storage.__class__
 
   num_threads = 40
-  start_url = "http://www.heise.de"
+  #start_url = "http://www.heise.de"
   #start_url = "http://www.google.com/search?q=semantic+web"
   #start_url = "http://www.semanticweb.org"
   #start_url = "http://amigo.geneontology.org/cgi-bin/amigo/browse.cgi?action=plus_node&target=GO:0008150&open_1=all&session_id=226amigo1228047842"
   #start_url = "http://amigo.geneontology.org"
+  #start_url = "http://swoogle.umbc.edu/index.php?option=com_frontpage&service=search&queryType=search_swd_ontology&searchString=test&searchStart=1"
+  start_url = "http://planetrdf.com/guide/"
   starttime = time.time()
 
   website_repository = Website_Repository(watchdog)
@@ -368,13 +397,20 @@ def run_crawler(sorted_storage, watchdog):
 
   print "Ignoring dangling threads"
 
-weighter =  Harmonic_Word_Weighter(["semantic", "web"])
-#matcher = Filetype_Matcher(["xml", "rdf", "xhtml"])
-#matcher = All_Matcher()
-matcher = Quality_Matcher(weighter, 0.7)
+                ############# Semantic Web Documents ##########
+#weighter =  Harmonic_Word_Weighter(["semantic", "web"])
+#matcher = Quality_Matcher(weighter, 0.7)
+#storage = Weighted_Storage(weighter)
+                     ############# XML Documents ##########
+#matcher = XML_Matcher()
+#weighter = Harmonic_Word_Weighter(["xml"])
+#storage = Weighted_Storage(weighter)
+##storage = Queue_Storage()
+                     ############# RDF Documents ##########
+matcher = RDF_Matcher()
+weighter = Harmonic_Word_Weighter(["rdf"])
+storage = Weighted_Storage(weighter)
+
 watchdog = Watchdog(matcher, 1000)
-run_crawler(Weighted_Storage(weighter), watchdog)
-#run_crawler(Stack_Storage())
-#run_crawler(Queue_Storage())
-#run_crawler(Server_Based_Storage())
-#run_crawler(Random_Storage())
+run_crawler(storage, watchdog)
+
