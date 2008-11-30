@@ -19,14 +19,13 @@ class URL_Repository:
   repository implementation is (supposed to be) thread safe.
   """
 
-  def __init__(self, startURL, pop_limit, sorted_storage):
-    self.num_removed_urls = 0
-    self.known_urls= set([startURL])
+  def __init__(self, startURL, sorted_storage, watchdog):
+    self.known_urls = set([startURL])
     self.condition = threading.Condition()
     self.num_duplicate_urls = 0
-    self.pop_limit = pop_limit
-    sorted_storage.add(startURL, "")
+    self.watchdog = watchdog
     self.sorted_storage = sorted_storage
+    self.sorted_storage.add(startURL, "")
 
   def add_url(self, url, containing_html):
     self.condition.acquire()
@@ -40,7 +39,7 @@ class URL_Repository:
 
   def reserve_url(self):
     "Returns a non-fetched URL and marks it as fetched."
-    if self.num_removed_urls >= self.pop_limit:
+    if self.watchdog.must_cancel():
       raise IndexError()
 
     self.condition.acquire()
@@ -50,16 +49,16 @@ class URL_Repository:
       self.condition.wait()
       url = self.sorted_storage.remove()
     self.condition.release()
-    self.num_removed_urls = self.num_removed_urls + 1
+    self.watchdog.url_removed(url)
     return url
 
-  def num_unique_uris(self):
+  def num_unique_urls(self):
     return len(self.known_urls)
 
-  def num_uris(self):
-    return self.num_unique_uris() + self.num_duplicate_urls
+  def num_urls(self):
+    return self.num_unique_urls() + self.num_duplicate_urls
 
-  def num_uris_previously_known(self):
+  def num_urls_previously_known(self):
     return self.num_duplicate_urls
 
 
@@ -224,21 +223,19 @@ class Word_Based_Weight:
     for key_word in self.key_words:
       num_matches_in_html = num_matches_in_html + len(re.findall(key_word, html, re.I))
       num_matches_in_url = num_matches_in_url + len(re.findall(key_word, url, re.I))
-    print "Matches in HTML: ", num_matches_in_html
-    print "Matches in URL: ", num_matches_in_url
     uncapped_weight = (num_matches_in_url / 3.0) + (num_matches_in_html * 1000.0 / (1 + len(html)))
     weight = min(0.9999999, uncapped_weight)
-    print "Weight: ", weight
+    #print "Matches in HTML: ", num_matches_in_html
+    #print "Matches in URL: ", num_matches_in_url
+    #print "Weight: ", weight
     return weight
 
-class Filetype_Based_Weight:
+class Filetype_Matcher:
   def __init__(self, extension):
     self.extension = extension
 
-  def get_weight(self, url, html):
-    if len(re.findall(self.extension + "$", url, re.I)) != 0:
-      return 1.0
-    return 0.0
+  def matches(self, url):
+    return len(re.findall("\\." + self.extension + "$", url, re.I)) != 0
 
 class Worker(threading.Thread):
   """A worker thread which gets URLs from the URL repository, stores it in the
@@ -258,9 +255,6 @@ class Worker(threading.Thread):
         return
  
       try:
-        if self.url_repository.num_removed_urls % 500 == 0:
-          print "Number of URLs crawled so far: ", self.url_repository.num_removed_urls
-
         #There seems to be some problem with urllib2 which makes reading
         #websites quite slow.
         response = urllib2.urlopen(url)
@@ -289,18 +283,39 @@ class Worker(threading.Thread):
         # http://bla.net/bla/../bla). Enable raising the exception to see them.
         #raise 
 
-def run_crawler(sorted_storage):
+class Watchdog:
+  """
+  Need a better name: Something like "A cancel condition based on the count of
+  matched URLs".
+  """
+  def __init__(self, matcher, matched_sites_limit):
+    self.num_removed_urls = 0
+    self.num_matched_urls = 0
+    self.matcher = matcher
+    self.matched_sites_limit = matched_sites_limit
+  def must_cancel(self):
+    return self.num_matched_urls > self.matched_sites_limit
+  def url_removed(self, url):
+    self.num_removed_urls = self.num_removed_urls + 1
+    if self.matcher.matches(url):
+      self.num_matched_urls = self.num_matched_urls + 1
+      print "Matched URL: ", url
+      print "Matched URLs: ", self.num_matched_urls, ", Fetched URLs: ", self.num_removed_urls
+
+def run_crawler(sorted_storage, watchdog):
 
   print "Starting crawling using sorted storage of type: " , sorted_storage.__class__
 
-  max_sites = 10000
   num_threads = 40
-  start_url = "http://www.heise.de"
-
+  #start_url = "http://www.heise.de"
+  #start_url = "http://www.google.com/search?q=semantic+web"
+  #start_url = "http://www.semanticweb.org"
+  #start_url = "http://amigo.geneontology.org/cgi-bin/amigo/browse.cgi?action=plus_node&target=GO:0008150&open_1=all&session_id=226amigo1228047842"
+  start_url = "http://amigo.geneontology.org"
   starttime = time.time()
 
   website_repository = Website_Repository()
-  url_repository = URL_Repository(start_url, max_sites, sorted_storage)
+  url_repository = URL_Repository(start_url, sorted_storage, watchdog)
   workers = [Worker(url_repository, website_repository) for i in range(1, num_threads + 1)]
 
   for worker in workers:
@@ -309,24 +324,25 @@ def run_crawler(sorted_storage):
   while True:
     for worker in workers:
       worker.join(1)
-      if url_repository.num_removed_urls >= max_sites:
-	break
-    if url_repository.num_removed_urls >= max_sites:
+      if watchdog.must_cancel():
+        break
+    if watchdog.must_cancel():
       break
 
   print "Time in seconds: ",  time.time() - starttime
-  print "Crawled Websites: ", url_repository.num_removed_urls
+  print "Crawled Websites: ", watchdog.num_removed_urls
 
-  print "URIs recognized: ", url_repository.num_uris()
-  print "Unique URIs: ", url_repository.num_unique_uris()
-  print "Previously known URIs: ", url_repository.num_uris_previously_known()
+  print "URLs recognized: ", url_repository.num_urls()
+  print "Unique URLs: ", url_repository.num_unique_urls()
+  print "Previously known URLs: ", url_repository.num_urls_previously_known()
 
   print "Previously known Websites: ", website_repository.num_duplicate_websites
 
   print "Ignoring dangling threads"
 
+watchdog = Watchdog(Filetype_Matcher("rdf"), 10)
 #run_crawler(Stack_Storage())
 #run_crawler(Queue_Storage())
 #run_crawler(Server_Based_Storage())
 #run_crawler(Random_Storage())
-#run_crawler(Weighted_Storage(Word_Based_Weight(["semantic", "web"])))
+run_crawler(Weighted_Storage(Word_Based_Weight(["rdf"])), watchdog)
