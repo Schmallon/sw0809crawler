@@ -29,13 +29,15 @@ class URL_Repository:
 
   def add_url(self, url, containing_html):
     self.condition.acquire()
-    if (url not in self.known_urls):
-      self.known_urls.add(url)
-      self.sorted_storage.add(url, containing_html)
-      self.condition.notify()
-    else:
-      self.num_duplicate_urls = self.num_duplicate_urls + 1
-    self.condition.release()
+    try:
+      if (url not in self.known_urls):
+        self.known_urls.add(url)
+        self.sorted_storage.add(url, containing_html)
+        self.condition.notify()
+      else:
+        self.num_duplicate_urls = self.num_duplicate_urls + 1
+    finally:
+      self.condition.release()
 
   def reserve_url(self):
     "Returns a non-fetched URL and marks it as fetched."
@@ -46,7 +48,8 @@ class URL_Repository:
     except self.sorted_storage.exception_class():
       self.condition.wait()
       url = self.reserve_url()
-    self.condition.release()
+    finally:
+      self.condition.release()
     return url
 
   def num_unique_urls(self):
